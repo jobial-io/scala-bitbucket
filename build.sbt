@@ -49,8 +49,10 @@ lazy val SoftwareConstructsVersion = "10.0.25"
 lazy val SclapVersion = "1.3.6"
 lazy val SprintVersion = "0.0.3"
 lazy val CirceVersion = "0.12.0-M3"
+lazy val CirceOpticsVersion = "0.11.0"
 lazy val LogbackVersion = "1.2.3"
 lazy val ShapelessVersion = "2.3.3"
+lazy val SttpVersion = "3.2.3"
 
 lazy val root: Project = project
   .in(file("."))
@@ -66,9 +68,13 @@ lazy val root: Project = project
       "ch.qos.logback" % "logback-classic" % LogbackVersion % Test,
       "com.chuusai" %% "shapeless" % ShapelessVersion,
       "com.github.sbt" % "junit-interface" % "0.13.2" % Test,
+      "io.circe" %% "circe-parser" % CirceVersion,
       "io.circe" %% "circe-generic-extras" % CirceVersion,
+      "io.circe" %% "circe-optics" % CirceOpticsVersion,
       "io.jobial" %% "sclap" % SclapVersion,
-      "io.jobial" %% "sprint" % SprintVersion
+      "io.jobial" %% "sprint" % SprintVersion,
+      "com.softwaremill.sttp.client3" %% "core" % SttpVersion,
+      "com.softwaremill.sttp.client3" %% "async-http-client-backend-cats" % SttpVersion
     )
   )
 
