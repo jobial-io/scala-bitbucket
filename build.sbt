@@ -14,7 +14,7 @@ name := "scala-bitbucket"
 
 ThisBuild / organization := "io.jobial"
 ThisBuild / scalaVersion := "2.11.12"
-ThisBuild / crossScalaVersions := Seq("2.11.12", "2.12.15", "2.13.8")
+ThisBuild / crossScalaVersions := Seq("2.11.12")
 ThisBuild / version := "0.0.3"
 ThisBuild / scalacOptions += "-target:jvm-1.8"
 ThisBuild / javacOptions ++= Seq("-source", "11", "-target", "11")
@@ -71,7 +71,6 @@ lazy val root: Project = project
       "io.circe" %% "circe-parser" % CirceVersion,
       "io.circe" %% "circe-generic-extras" % CirceVersion,
       "io.circe" %% "circe-optics" % CirceOpticsVersion,
-      "io.jobial" %% "sclap" % SclapVersion,
       "io.jobial" %% "sprint" % SprintVersion,
       "com.softwaremill.sttp.client3" %% "core" % SttpVersion,
       "com.softwaremill.sttp.client3" %% "async-http-client-backend-cats" % SttpVersion
