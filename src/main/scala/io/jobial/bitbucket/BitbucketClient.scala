@@ -59,9 +59,8 @@ trait BitbucketClient[F[_]] extends Logging[F] with CatsUtils[F] {
       r <- getPathFromBitbucketList(uri"${context.baseUrl}/${context.workspace}/$repository/pipelines?page=1&sort=-created_on", root.json)
     } yield r.headOption
 
-  def getPipelinesNotRun(implicit context: BitbucketContext, concurrent: Concurrent[F], parallel: Parallel[F], contextShift: ContextShift[F], timer: Timer[F]) =
+  def getPipelinesNotRun(repos: List[String])(implicit context: BitbucketContext, concurrent: Concurrent[F], parallel: Parallel[F], contextShift: ContextShift[F], timer: Timer[F]) =
     for {
-      repos <- getProjectRepos
       lastPipelines <- repos.map(getLastPipeline(_)).parSequence.map(_.flatten)
       targets = lastPipelines.filter(root.duration_in_seconds.int.getOption(_) === Some(0)).filter(root.state.name.string.getOption(_) === Some("COMPLETED"))
         .map(json => root.repository.name.string.getOption(json).get -> root.target.ref_name.string.getOption(json).get)
