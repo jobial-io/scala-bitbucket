@@ -59,19 +59,23 @@ trait BitbucketClient[F[_]] extends Logging[F] with CatsUtils[F] {
       r <- getPathFromBitbucketList(uri"${context.baseUrl}/${context.workspace}/$repository/pipelines?page=1&sort=-created_on", root.json)
     } yield r.headOption
 
-  def triggerPipelinesNotRun(implicit context: BitbucketContext, concurrent: Concurrent[F], parallel: Parallel[F], contextShift: ContextShift[F], timer: Timer[F]) =
+  def getPipelinesNotRun(implicit context: BitbucketContext, concurrent: Concurrent[F], parallel: Parallel[F], contextShift: ContextShift[F], timer: Timer[F]) =
     for {
       repos <- getProjectRepos
       lastPipelines <- repos.map(getLastPipeline(_)).parSequence.map(_.flatten)
       targets = lastPipelines.filter(root.duration_in_seconds.int.getOption(_) === Some(0)).filter(root.state.name.string.getOption(_) === Some("COMPLETED"))
         .map(json => root.repository.name.string.getOption(json).get -> root.target.ref_name.string.getOption(json).get)
+    } yield targets
+
+  def triggerPipelines(targets: List[(String, String)])(implicit context: BitbucketContext, concurrent: Concurrent[F], parallel: Parallel[F], contextShift: ContextShift[F], timer: Timer[F]) =
+    for {
       _ <- whenA(targets.isEmpty)(info("No pipelines to trigger"))
       r <- targets.map { case (repo, branch) =>
         info(s"Triggering pipeline $repo:$branch") >>
           triggerPipeline(repo, branch) >> sleep(3.seconds)
       }.sequence
     } yield r
-
+  
   def triggerPipeline(repository: String, branch: String)(implicit context: BitbucketContext, concurrent: Concurrent[F], contextShift: ContextShift[F]): F[_] =
     AsyncHttpClientCatsBackend.resource[F]().use { backend =>
       val request = basicRequest
