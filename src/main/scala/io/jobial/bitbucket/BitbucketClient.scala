@@ -74,7 +74,7 @@ trait BitbucketClient[F[_]] extends Logging[F] with CatsUtils[F] {
           triggerPipeline(repo, branch) >> sleep(3.seconds)
       }.sequence
     } yield r
-  
+
   def triggerPipeline(repository: String, branch: String)(implicit context: BitbucketContext, concurrent: Concurrent[F], contextShift: ContextShift[F]): F[_] =
     AsyncHttpClientCatsBackend.resource[F]().use { backend =>
       val request = basicRequest
@@ -134,6 +134,21 @@ trait BitbucketClient[F[_]] extends Logging[F] with CatsUtils[F] {
     runners <- getBitbucketList(uri"${context.internalBaseUrl}/workspaces/${context.workspaceUUID}/pipelines-config/runners")
     r <- runners.map(r => fromEither(r.as[BitbucketRunner])).parSequence
   } yield r
+
+  def dockerRunBitbucketRunner(
+    accountUUID: String,
+    runnerUUID: String,
+    oauthClientId: String,
+    oauthClientSecret: String,
+    workingDirectory: String = "/tmp"
+  ) =
+    s"""docker container run -d --restart always -v /tmp:/tmp -v /var/run/docker.sock:/var/run/docker.sock \
+-v /var/lib/docker/containers:/var/lib/docker/containers:ro -e ACCOUNT_UUID={$accountUUID} -e RUNNER_UUID={$runnerUUID} \
+-e RUNTIME_PREREQUISITES_ENABLED=true -e OAUTH_CLIENT_ID=$oauthClientId \
+-e OAUTH_CLIENT_SECRET=$oauthClientSecret -e WORKING_DIRECTORY=$workingDirectory \
+--name runner-$runnerUUID docker-public.packages.atlassian.com/sox/atlassian/bitbucket-pipelines-runner:1
+"""
+
 }
 
 case class BitbucketContext(
