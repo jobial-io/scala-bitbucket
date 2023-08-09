@@ -149,7 +149,7 @@ trait BitbucketClient[F[_]] extends Logging[F] with CatsUtils[F] {
 """
 
   def updateDockerCpuQuotas =
-    """for i in \$(docker ps --format '{{.ID}}'x)''; do sudo docker update --cpu-quota -1 \$i; done
+    """for i in \$(docker ps --format '{{.ID}}') ; do sudo docker update --cpu-quota -1 \$i; done
 """
 }
 
