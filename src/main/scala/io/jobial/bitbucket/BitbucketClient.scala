@@ -10,10 +10,6 @@ import io.circe.Json
 import io.circe.Json.obj
 import io.circe.generic.auto._
 import io.circe.optics.JsonPath.root
-import io.circe.Json
-import io.circe.Json.obj
-import io.circe.generic.auto._
-import io.circe.optics.JsonPath.root
 import io.circe.parser
 import io.circe.syntax.EncoderOps
 import sttp.client3.UriContext
