@@ -19,17 +19,29 @@ import sttp.client3.basicRequest
 import sttp.model.Uri
 import io.jobial.sprint.logging.Logging
 import io.jobial.sprint.util.CatsUtils
+import org.joda.time.DateTime
+import org.joda.time.DateTime
+import org.joda.time.Duration
+import org.joda.time.format.PeriodFormatterBuilder
 import sttp.client3.UriContext
 
 import java.time.Instant
 import java.time.Instant.now
 import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import scala.concurrent.duration.DurationInt
 
 trait BitbucketClient[F[_]] extends Logging[F] with CatsUtils[F] {
 
   def getProjectRepos(implicit context: BitbucketContext, concurrent: Concurrent[F], contextShift: ContextShift[F]) =
     getPathFromBitbucketList(uri"""${context.baseUrl}/${context.workspace}?q=project.key="${context.project}"""", root.name.string)
+
+  def getProjectRepoInfos(implicit context: BitbucketContext, concurrent: Concurrent[F], parallel: Parallel[F], contextShift: ContextShift[F]) =
+    for {
+      repos <- getProjectRepos.map(_.map(BitbucketRepoInfo(_)))
+      repos <- repos.map(r => getLastPipeline(r.name).map(p => r.copy(lastPipeline = p))).parSequence
+    } yield repos
 
   def getPipelinesLastTime(repository: String)(implicit context: BitbucketContext, concurrent: Concurrent[F], contextShift: ContextShift[F]) =
     for {
@@ -172,3 +184,49 @@ case class BitbucketRunnerState(
   status: String,
   updated_on: String
 )
+
+
+case class BitbucketRepoInfo(
+  name: String,
+  lastPipeline: Option[Json] = None,
+  lastTime: Option[DateTime] = None
+) {
+  def lastPipelineState = lastPipeline.flatMap(root.state.name.string.getOption(_))
+
+  def lastPipelineResult = lastPipeline.flatMap(root.state.result.name.string.getOption(_))
+
+  def lastPipelineCompletedTime = lastPipeline.flatMap(root.completed_on.string.getOption(_).map(Instant.parse))
+
+  def lastPipelineDuration = lastPipeline.flatMap(root.duration_in_seconds.int.getOption(_))
+
+  def lastPipelineCreatedOn = lastPipeline.flatMap(root.created_on.string.getOption(_).map(Instant.parse))
+
+  def prettyState = lastPipelineState match {
+    case Some("COMPLETED") =>
+      lastPipelineResult match {
+        case Some(r) =>
+          r.toLowerCase.capitalize
+        case None =>
+          ""
+      }
+    case Some("IN_PROGRESS") =>
+      "Running"
+    case Some(s) =>
+      s
+    case None =>
+      ""
+  }
+
+  val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault)
+
+  def prettyTimestamp = formatter.format(lastPipelineCompletedTime.getOrElse(Instant.now))
+
+  val periodFormatter = new PeriodFormatterBuilder()
+    .appendMinutes().appendSuffix("m").appendSeconds().appendSuffix("s")
+    .toFormatter
+
+  def prettyDuration = lastPipelineDuration
+    .filterNot(_ === 0)
+    .orElse(lastPipelineCreatedOn.map(c => (DateTime.now.getMillis - c.toEpochMilli).toInt / 1000)).map(d => new Duration(d * 1000).toPeriod())
+    .map(periodFormatter.print(_)).getOrElse("")
+}

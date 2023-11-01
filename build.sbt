@@ -15,7 +15,7 @@ name := "scala-bitbucket"
 ThisBuild / organization := "io.jobial"
 ThisBuild / scalaVersion := "2.11.12"
 ThisBuild / crossScalaVersions := Seq("2.11.12")
-ThisBuild / version := "0.1.3"
+ThisBuild / version := "0.1.4"
 ThisBuild / scalacOptions += "-target:jvm-1.8"
 ThisBuild / javacOptions ++= Seq("-source", "11", "-target", "11")
 ThisBuild / Test / packageBin / publishArtifact := true
@@ -53,6 +53,7 @@ lazy val CirceOpticsVersion = "0.11.0"
 lazy val LogbackVersion = "1.2.3"
 lazy val ShapelessVersion = "2.3.3"
 lazy val SttpVersion = "3.2.3"
+lazy val JodaTimeVersion = "2.11.1"
 
 lazy val root: Project = project
   .in(file("."))
@@ -73,7 +74,8 @@ lazy val root: Project = project
       "io.circe" %% "circe-optics" % CirceOpticsVersion,
       "io.jobial" %% "sprint" % SprintVersion,
       "com.softwaremill.sttp.client3" %% "core" % SttpVersion,
-      "com.softwaremill.sttp.client3" %% "async-http-client-backend-cats" % SttpVersion
+      "com.softwaremill.sttp.client3" %% "async-http-client-backend-cats" % SttpVersion,
+      "joda-time" % "joda-time" % JodaTimeVersion
     )
   )
 
