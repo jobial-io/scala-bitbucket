@@ -169,7 +169,11 @@ case class BitbucketContext(
   workspaceUUID: String,
   baseUrl: String = "https://api.bitbucket.org/2.0/repositories",
   internalBaseUrl: String = "https://api.bitbucket.org/internal"
-)
+) {
+  
+  def gitUri(repo: String) =
+    s"git@bitbucket.org:${workspace}/${repo}.git"
+}
 
 case class BitbucketRunner(
   uuid: String,
