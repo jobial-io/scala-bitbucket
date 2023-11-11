@@ -170,7 +170,7 @@ case class BitbucketContext(
   baseUrl: String = "https://api.bitbucket.org/2.0/repositories",
   internalBaseUrl: String = "https://api.bitbucket.org/internal"
 ) {
-  
+
   def gitUri(repo: String) =
     s"git@bitbucket.org:${workspace}/${repo}.git"
 }
@@ -197,6 +197,8 @@ case class BitbucketRepoInfo(
 ) {
   def lastPipelineState = lastPipeline.flatMap(root.state.name.string.getOption(_))
 
+  def lastPipelineRefName = lastPipeline.flatMap(root.target.ref_name.string.getOption(_))
+
   def lastPipelineResult = lastPipeline.flatMap(root.state.result.name.string.getOption(_))
 
   def lastPipelineCompletedTime = lastPipeline.flatMap(root.completed_on.string.getOption(_).map(Instant.parse))
@@ -204,6 +206,8 @@ case class BitbucketRepoInfo(
   def lastPipelineDuration = lastPipeline.flatMap(root.duration_in_seconds.int.getOption(_))
 
   def lastPipelineCreatedOn = lastPipeline.flatMap(root.created_on.string.getOption(_).map(Instant.parse))
+
+  def lastPipelineNotRun = lastPipelineDuration === Some(0) && lastPipelineState === Some("COMPLETED")
 
   def prettyState = lastPipelineState match {
     case Some("COMPLETED") =>
