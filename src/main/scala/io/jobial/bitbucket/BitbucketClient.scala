@@ -192,8 +192,7 @@ case class BitbucketRunnerState(
 
 case class BitbucketRepoInfo(
   name: String,
-  lastPipeline: Option[Json] = None,
-  lastTime: Option[DateTime] = None
+  lastPipeline: Option[Json] = None
 ) {
   def lastPipelineState = lastPipeline.flatMap(root.state.name.string.getOption(_))
 
