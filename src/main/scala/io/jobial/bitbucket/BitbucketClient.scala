@@ -206,7 +206,7 @@ case class BitbucketRepoInfo(
 
   def lastPipelineCreatedOn = lastPipeline.flatMap(root.created_on.string.getOption(_).map(Instant.parse))
 
-  def lastPipelineNotRun = lastPipelineDuration === Some(0) && lastPipelineState === Some("COMPLETED")
+  def lastPipelineNotRun = (lastPipelineDuration === Some(0) && lastPipelineState === Some("COMPLETED")) || lastPipelineResult === Some("ERROR")
 
   def prettyState = lastPipelineState match {
     case Some("COMPLETED") =>
