@@ -40,7 +40,7 @@ trait BitbucketClient[F[_]] extends Logging[F] with CatsUtils[F] {
   def getProjectRepoInfos(implicit context: BitbucketContext, concurrent: Concurrent[F], parallel: Parallel[F], contextShift: ContextShift[F]) =
     for {
       repos <- getProjectRepos.map(_.map(BitbucketRepoInfo(_)))
-      repos <- repos.map(r => getLastPipeline(r.name).map(p => r.copy(lastPipeline = p))).parSequence
+      repos <- repos.map(r => getLastPipelines(r.name).map(p => r.copy(lastPipelines = p))).parSequence
     } yield repos
 
   def getPipelinesLastTime(repository: String)(implicit context: BitbucketContext, concurrent: Concurrent[F], contextShift: ContextShift[F]) =
@@ -62,17 +62,10 @@ trait BitbucketClient[F[_]] extends Logging[F] with CatsUtils[F] {
       r <- getPathFromBitbucketList(uri"${context.baseUrl}/${context.workspace}/$repository/pipelines?page=1&sort=-created_on", root.state.name.string)
     } yield r
 
-  def getLastPipeline(repository: String)(implicit context: BitbucketContext, concurrent: Concurrent[F], contextShift: ContextShift[F]) =
+  def getLastPipelines(repository: String)(implicit context: BitbucketContext, concurrent: Concurrent[F], contextShift: ContextShift[F]) =
     for {
       r <- getPathFromBitbucketList(uri"${context.baseUrl}/${context.workspace}/$repository/pipelines?page=1&sort=-created_on", root.json)
-    } yield r.headOption
-
-  def getPipelinesNotRun(repos: List[String])(implicit context: BitbucketContext, concurrent: Concurrent[F], parallel: Parallel[F], contextShift: ContextShift[F], timer: Timer[F]) =
-    for {
-      lastPipelines <- repos.map(getLastPipeline(_)).parSequence.map(_.flatten)
-      targets = lastPipelines.filter(root.duration_in_seconds.int.getOption(_) === Some(0)).filter(root.state.name.string.getOption(_) === Some("COMPLETED"))
-        .map(json => root.repository.name.string.getOption(json).get -> root.target.ref_name.string.getOption(json).get)
-    } yield targets
+    } yield r
 
   def triggerPipelines(targets: List[(String, String)])(implicit context: BitbucketContext, concurrent: Concurrent[F], parallel: Parallel[F], contextShift: ContextShift[F], timer: Timer[F]) =
     for {
@@ -192,8 +185,11 @@ case class BitbucketRunnerState(
 
 case class BitbucketRepoInfo(
   name: String,
-  lastPipeline: Option[Json] = None
+  lastPipelines: List[Json] = List()
 ) {
+  
+  def lastPipeline = lastPipelines.headOption
+  
   def lastPipelineState = lastPipeline.flatMap(root.state.name.string.getOption(_))
 
   def lastPipelineRefName = lastPipeline.flatMap(root.target.ref_name.string.getOption(_))
