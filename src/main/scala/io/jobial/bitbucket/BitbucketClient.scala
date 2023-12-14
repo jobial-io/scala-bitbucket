@@ -222,7 +222,7 @@ case class BitbucketRepoInfo(
 
   val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault)
 
-  def prettyTimestamp = formatter.format(lastPipelineCompletedTime.getOrElse(Instant.now))
+  def prettyTimestamp = lastPipeline.map(_ => formatter.format(lastPipelineCompletedTime.getOrElse(Instant.now)))
 
   val periodFormatter = new PeriodFormatterBuilder()
     .appendMinutes().appendSuffix("m").appendSeconds().appendSuffix("s")
