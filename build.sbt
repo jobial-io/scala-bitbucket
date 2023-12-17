@@ -15,7 +15,7 @@ name := "scala-bitbucket"
 ThisBuild / organization := "io.jobial"
 ThisBuild / scalaVersion := "2.13.8"
 ThisBuild / crossScalaVersions := Seq("2.12.15", "2.13.8")
-ThisBuild / version := "0.2.1"
+ThisBuild / version := "0.2.2"
 ThisBuild / scalacOptions += "-target:jvm-1.8"
 ThisBuild / javacOptions ++= Seq("-source", "11", "-target", "11")
 ThisBuild / Test / packageBin / publishArtifact := true
@@ -52,7 +52,6 @@ lazy val SprintVersion = "0.3.0"
 lazy val CirceVersion = "0.14.1"
 lazy val CirceOpticsVersion = "0.14.1"
 lazy val LogbackVersion = "1.2.3"
-lazy val ShapelessVersion = "2.3.3"
 lazy val SttpVersion = "3.2.3"
 lazy val JodaTimeVersion = "2.11.1"
 
@@ -68,7 +67,6 @@ lazy val root: Project = project
       "com.typesafe.scala-logging" %% "scala-logging" % ScalaLoggingVersion,
       "org.scalatest" %% "scalatest" % ScalatestVersion % Test,
       "ch.qos.logback" % "logback-classic" % LogbackVersion % Test,
-      "com.chuusai" %% "shapeless" % ShapelessVersion,
       "com.github.sbt" % "junit-interface" % "0.13.2" % Test,
       "io.circe" %% "circe-parser" % CirceVersion,
       "io.circe" %% "circe-generic-extras" % CirceVersion,
