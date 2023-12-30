@@ -15,7 +15,7 @@ name := "scala-bitbucket"
 ThisBuild / organization := "io.jobial"
 ThisBuild / scalaVersion := "2.13.8"
 ThisBuild / crossScalaVersions := Seq("2.12.15", "2.13.8")
-ThisBuild / version := "0.2.4"
+ThisBuild / version := "0.3.0"
 ThisBuild / scalacOptions += "-target:jvm-1.8"
 ThisBuild / javacOptions ++= Seq("-source", "11", "-target", "11")
 ThisBuild / Test / packageBin / publishArtifact := true
@@ -47,10 +47,12 @@ lazy val KittensVersion = "2.3.2"
 lazy val CatsTestkitScalatestVersion = "2.1.5"
 lazy val ScalaLoggingVersion = "3.9.2"
 lazy val ScalatestVersion = "3.2.3"
+lazy val ScalaXmlVersion = "1.3.0"
 lazy val SoftwareConstructsVersion = "10.0.25"
 lazy val SprintVersion = "0.3.2"
 lazy val CirceVersion = "0.14.1"
 lazy val CirceOpticsVersion = "0.14.1"
+lazy val CirceYamlVersion = "0.14.1"
 lazy val LogbackVersion = "1.2.3"
 lazy val SttpVersion = "3.2.3"
 lazy val JodaTimeVersion = "2.11.1"
@@ -74,7 +76,8 @@ lazy val root: Project = project
       "io.jobial" %% "sprint" % SprintVersion,
       "com.softwaremill.sttp.client3" %% "core" % SttpVersion,
       "com.softwaremill.sttp.client3" %% "async-http-client-backend-cats" % SttpVersion,
+      "org.scala-lang.modules" %% "scala-xml" % ScalaXmlVersion,
+      "io.circe" %% "circe-yaml" % CirceYamlVersion,
       "joda-time" % "joda-time" % JodaTimeVersion
     )
   )
-
