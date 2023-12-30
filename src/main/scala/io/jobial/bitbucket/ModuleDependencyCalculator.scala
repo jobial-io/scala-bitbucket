@@ -84,7 +84,7 @@ trait ModuleDependencyCalculator extends ProcessManagement[IO] {
     }.parSequence.map(_.flatten)
 
   def filterOutExternalDependencies(dependencies: ModuleDependencies) =
-    dependencies.view.mapValues(_.filter(dependencies.isDefinedAt)).toMap
+    dependencies.mapValues(_.filter(dependencies.isDefinedAt)).toMap
 
   def parseFilesFromAllBranches(repos: List[String], parse: String => Set[Module], filePattern: String) =
     for {
@@ -92,7 +92,7 @@ trait ModuleDependencyCalculator extends ProcessManagement[IO] {
       dependencies = files.map { case (module, files) =>
         module ->
           files.flatMap { file =>
-            Try(parse(file)).onError { t =>
+            Try(parse(file)).onError { case t =>
               Try(logger.error(s"Error parsing file for $module: $file", t))
             }.getOrElse(Set())
           }.toSet
@@ -134,7 +134,7 @@ trait ModuleDependencyCalculator extends ProcessManagement[IO] {
       pipelineDependencies <- getBitbucketPipelineDependencies(repos)
       dockerDependencies <- getDockerDependencies(repos)
       allDependencies = Seq(mavenDependencies, pipelineDependencies, dockerDependencies).map(_.toSeq).reduce(_ ++ _)
-    } yield allDependencies.groupBy(_._1).view.mapValues { v =>
+    } yield allDependencies.groupBy(_._1).mapValues { v =>
       val s = v.toSet
       s.flatMap(a => a._2)
     }.toMap
