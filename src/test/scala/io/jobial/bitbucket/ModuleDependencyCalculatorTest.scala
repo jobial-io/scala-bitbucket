@@ -38,7 +38,7 @@ class ModuleDependencyCalculatorTest
     assert(dependentRoots(c, dependencies) == Set(e, ef))
     assert(dependentRoots(d, dependencies) == Set(e))
   }
-  override def dockerfileFromImagePattern: Regex = ???
+  override def dockerImagePattern: Regex = ???
 
   override implicit protected def contextShift: ContextShift[IO] = ???
 

@@ -112,11 +112,11 @@ trait ModuleDependencyCalculator extends ProcessManagement[IO] {
   def getBitbucketPipelineDependencies(repos: List[String]) =
     parseFilesFromAllBranches(repos, parseBitbucketPipelines, ".*bitbucket-pipelines.yml$")
 
-  def dockerfileFromImagePattern: Regex
+  def dockerImagePattern: Regex
 
   def parseDockerfileDependencies(dockerfile: String) =
     dockerfile.split("\n").flatMap { line =>
-      val pattern = dockerfileFromImagePattern
+      val pattern = dockerImagePattern
       line match {
         case pattern(name) =>
           Some(name)
