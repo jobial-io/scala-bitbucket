@@ -200,6 +200,8 @@ case class BitbucketRepoInfo(
 
   def lastPipelineDuration = lastPipeline.flatMap(root.duration_in_seconds.int.getOption(_))
 
+  def lastPipelineBuildNumber = lastPipeline.flatMap(root.build_number.int.getOption(_))
+
   def lastPipelineCreatedOn = lastPipeline.flatMap(root.created_on.string.getOption(_).map(Instant.parse))
 
   def lastPipelineNotRun = (lastPipelineDuration === Some(0) && lastPipelineState === Some("COMPLETED")) || lastPipelineResult === Some("ERROR")
