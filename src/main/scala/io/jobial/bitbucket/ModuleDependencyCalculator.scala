@@ -154,10 +154,22 @@ trait ModuleDependencyCalculator extends ProcessManagement[IO] {
       if (dependencies.keySet.contains(d1)) d1 else d
     }
 
+  def dependenciesClosure(dependencies: ModuleDependencies) =
+    dependencies.map { case (k, _) => k -> setBranchForAncestors(k, ancestors(k, dependencies), dependencies) }
+    
   def dependentRoots(module: Module, dependencies: ModuleDependencies) = {
-    val dependenciesClosure = dependencies.map { case (k, _) => k -> setBranchForAncestors(k, ancestors(k, dependencies), dependencies) }
+    val closure = dependenciesClosure(dependencies)
 
-    roots(dependents(module, dependenciesClosure), dependenciesClosure)
+    roots(dependents(module, closure), closure)
+  }
+  
+  def dependenciesInBetween(ancestor: Module, descendent: Module, dependencies: ModuleDependencies) = {
+    val closure = dependenciesClosure(dependencies)
+    
+    val ancestorDependents = setBranchForAncestors(descendent, dependents(ancestor, closure), closure)
+    val descendentAncestors = ancestors(descendent, closure)
+
+    ancestorDependents.intersect(descendentAncestors)
   }
 
   val reposDir = "/tmp/repos"

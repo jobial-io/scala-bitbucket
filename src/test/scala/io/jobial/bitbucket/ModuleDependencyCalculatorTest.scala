@@ -37,6 +37,11 @@ class ModuleDependencyCalculatorTest
     assert(dependentRoots(df, dependencies) == Set(ef))
     assert(dependentRoots(c, dependencies) == Set(e, ef))
     assert(dependentRoots(d, dependencies) == Set(e))
+    
+    assert(dependenciesInBetween(a, e, dependencies) == Set(b, c, d))
+    assert(dependenciesInBetween(a, c, dependencies) == Set(b))
+    assert(dependenciesInBetween(a, b, dependencies) == Set())
+    assert(dependenciesInBetween(a, ef, dependencies) == Set(b, c, df))
   }
   override def dockerImagePattern: Regex = ???
 
