@@ -7,6 +7,7 @@ import cats.effect.IO
 import cats.effect.Timer
 import cats.implicits._
 import io.circe.Json
+import io.circe.Json.arr
 import io.circe.Json.obj
 import io.circe.generic.auto._
 import io.circe.optics.JsonPath.root
@@ -67,16 +68,16 @@ trait BitbucketClient[F[_]] extends Logging[F] with CatsUtils[F] {
       r <- getPathFromBitbucketList(uri"${context.baseUrl}/${context.workspace}/$repository/pipelines?page=1&sort=-created_on", root.json)
     } yield r
 
-  def triggerPipelines(targets: List[(String, String)])(implicit context: BitbucketContext, concurrent: Concurrent[F], parallel: Parallel[F], contextShift: ContextShift[F], timer: Timer[F]) =
+  def triggerPipelines(targets: List[(String, String)], variables: List[(String, String)] = List())(implicit context: BitbucketContext, concurrent: Concurrent[F], parallel: Parallel[F], contextShift: ContextShift[F], timer: Timer[F]) =
     for {
       _ <- whenA(targets.isEmpty)(info("No pipelines to trigger"))
       r <- targets.map { case (repo, branch) =>
         info(s"Triggering pipeline $repo:$branch") >>
-          triggerPipeline(repo, branch) >> sleep(3.seconds)
+          triggerPipeline(repo, branch, variables) >> sleep(3.seconds)
       }.sequence
     } yield r
 
-  def triggerPipeline(repository: String, branch: String)(implicit context: BitbucketContext, concurrent: Concurrent[F], contextShift: ContextShift[F]): F[_] =
+  def triggerPipeline(repository: String, branch: String, variables: List[(String, String)] = List())(implicit context: BitbucketContext, concurrent: Concurrent[F], contextShift: ContextShift[F]): F[_] =
     AsyncHttpClientCatsBackend.resource[F]().use { backend =>
       val request = basicRequest
         .post(uri"${context.baseUrl}/${context.workspace}/$repository/pipelines/")
@@ -87,6 +88,14 @@ trait BitbucketClient[F[_]] extends Logging[F] with CatsUtils[F] {
               "ref_type" -> "branch".asJson,
               "type" -> "pipeline_ref_target".asJson,
               "ref_name" -> branch.asJson
+            ),
+            "variables" -> arr(
+              variables.map { case (key, value) =>
+                obj(
+                  "key" -> key.asJson,
+                  "value" -> value.asJson
+                )
+              }: _*
             )
           ).noSpaces
         )
@@ -187,9 +196,9 @@ case class BitbucketRepoInfo(
   name: String,
   lastPipelines: List[Json] = List()
 ) {
-  
+
   def lastPipeline = lastPipelines.headOption
-  
+
   def lastPipelineState = lastPipeline.flatMap(root.state.name.string.getOption(_))
 
   def lastPipelineRefName = lastPipeline.flatMap(root.target.ref_name.string.getOption(_))
