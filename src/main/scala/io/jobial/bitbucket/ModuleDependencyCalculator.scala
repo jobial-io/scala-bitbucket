@@ -65,7 +65,7 @@ trait ModuleDependencyCalculator extends ProcessManagement[IO] {
       d <- dependencies.map(_ \ "dependency").toList
       g <- d \ "groupId" if g.text === mavenGroupId
       a <- d \ "artifactId"
-    } yield a.text)).map(Module(_, mainBranchName))
+    } yield a.text)).map(DependencyModule(_, mainBranchName))
   }
 
   def updateRepoMirrors(repos: List[String]) =
@@ -78,7 +78,7 @@ trait ModuleDependencyCalculator extends ProcessManagement[IO] {
         files <- branches.map { branch =>
           for {
             files <- readFilesFromBranch(repo, branch, filePattern)
-          } yield Module(repo, branch) -> files
+          } yield DependencyModule(repo, branch) -> files
         }.parSequence
       } yield files
     }.parSequence.map(_.flatten)
@@ -86,7 +86,7 @@ trait ModuleDependencyCalculator extends ProcessManagement[IO] {
   def filterOutExternalDependencies(dependencies: ModuleDependencies) =
     dependencies.mapValues(_.filter(dependencies.isDefinedAt)).toMap
 
-  def parseFilesFromAllBranches(repos: List[String], parse: String => Set[Module], filePattern: String) =
+  def parseFilesFromAllBranches(repos: List[String], parse: String => Set[DependencyModule], filePattern: String) =
     for {
       files <- readFilesFromAllBranches(repos, filePattern)
       dependencies = files.map { case (module, files) =>
@@ -107,7 +107,7 @@ trait ModuleDependencyCalculator extends ProcessManagement[IO] {
       yml <- parser.parse(file)
       image <- yml.hcursor.downField("image").downField("name").as[String]
     } yield image.substring(image.lastIndexOf('/') + 1)
-  }.toOption.toSet.map(Module(_, mainBranchName))
+  }.toOption.toSet.map(DependencyModule(_, mainBranchName))
 
   def getBitbucketPipelineDependencies(repos: List[String]) =
     parseFilesFromAllBranches(repos, parseBitbucketPipelines, ".*bitbucket-pipelines.yml$")
@@ -123,7 +123,7 @@ trait ModuleDependencyCalculator extends ProcessManagement[IO] {
         case _ =>
           None
       }
-    }.toSet.map(Module(_, mainBranchName))
+    }.toSet.map(DependencyModule(_, mainBranchName))
 
   def getDockerDependencies(repos: List[String]) =
     parseFilesFromAllBranches(repos, parseDockerfileDependencies, ".*Dockerfile$")
@@ -139,16 +139,16 @@ trait ModuleDependencyCalculator extends ProcessManagement[IO] {
       s.flatMap(a => a._2)
     }.toMap
 
-  def dependents(pipeline: Module, dependencies: ModuleDependencies) =
+  def dependents(pipeline: DependencyModule, dependencies: ModuleDependencies) =
     dependencies.keySet.filter(dependencies(_).contains(pipeline))
 
-  def ancestors(pipeline: Module, dependencies: ModuleDependencies): Set[Module] =
+  def ancestors(pipeline: DependencyModule, dependencies: ModuleDependencies): Set[DependencyModule] =
     dependencies(pipeline) ++ dependencies(pipeline).flatMap(ancestors(_, dependencies))
 
-  def roots(pipelines: Set[Module], dependencies: ModuleDependencies) =
+  def roots(pipelines: Set[DependencyModule], dependencies: ModuleDependencies) =
     pipelines.filter(p => dependencies(p).forall(!pipelines.contains(_)))
 
-  def setBranchForAncestors(module: Module, ancestors: Set[Module], dependencies: ModuleDependencies) =
+  def setBranchForAncestors(module: DependencyModule, ancestors: Set[DependencyModule], dependencies: ModuleDependencies) =
     ancestors.map { d =>
       val d1 = d.copy(branch = module.branch)
       if (dependencies.keySet.contains(d1)) d1 else d
@@ -157,13 +157,13 @@ trait ModuleDependencyCalculator extends ProcessManagement[IO] {
   def dependenciesClosure(dependencies: ModuleDependencies) =
     dependencies.map { case (k, _) => k -> setBranchForAncestors(k, ancestors(k, dependencies), dependencies) }
     
-  def dependentRoots(module: Module, dependencies: ModuleDependencies) = {
+  def dependentRoots(module: DependencyModule, dependencies: ModuleDependencies) = {
     val closure = dependenciesClosure(dependencies)
 
     roots(dependents(module, closure), closure)
   }
   
-  def dependenciesInBetween(ancestor: Module, descendent: Module, dependencies: ModuleDependencies) = {
+  def dependenciesInBetween(ancestor: DependencyModule, descendent: DependencyModule, dependencies: ModuleDependencies) = {
     val closure = dependenciesClosure(dependencies)
     
     val ancestorDependents = setBranchForAncestors(descendent, dependents(ancestor, closure), closure)
@@ -180,7 +180,7 @@ trait ModuleDependencyCalculator extends ProcessManagement[IO] {
 
   def bitbucketRepositoryUri(name: String): String
 
-  type ModuleDependencies = Map[Module, Set[Module]]
+  type ModuleDependencies = Map[DependencyModule, Set[DependencyModule]]
 
   val emptyDependencies: ModuleDependencies = Map()
   
@@ -189,4 +189,4 @@ trait ModuleDependencyCalculator extends ProcessManagement[IO] {
   val mainBranchName = "master"
 }
 
-case class Module(name: String, branch: String)
+case class DependencyModule(name: String, branch: String)

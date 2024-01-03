@@ -12,16 +12,16 @@ class ModuleDependencyCalculatorTest
     with ModuleDependencyCalculator {
 
   "dependencies" should "work" in {
-    val a = Module("a", "master")
-    val af = Module("a", "feature")
-    val b = Module("b", "master")
-    val c = Module("c", "master")
-    val d = Module("d", "master")
-    val df = Module("d", "feature")
-    val e = Module("e", "master")
-    val ef = Module("e", "feature")
+    val a = DependencyModule("a", "master")
+    val af = DependencyModule("a", "feature")
+    val b = DependencyModule("b", "master")
+    val c = DependencyModule("c", "master")
+    val d = DependencyModule("d", "master")
+    val df = DependencyModule("d", "feature")
+    val e = DependencyModule("e", "master")
+    val ef = DependencyModule("e", "feature")
 
-    val dependencies = Map[Module, Set[Module]](
+    val dependencies = Map[DependencyModule, Set[DependencyModule]](
       a -> Set(),
       af -> Set(),
       b -> Set(a),
