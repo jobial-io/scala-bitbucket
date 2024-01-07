@@ -3,7 +3,6 @@ package io.jobial.bitbucket
 import cats.Parallel
 import cats.effect.Concurrent
 import cats.effect.ContextShift
-import cats.effect.IO
 import cats.effect.Timer
 import cats.implicits._
 import io.circe.Json
@@ -13,25 +12,23 @@ import io.circe.generic.auto._
 import io.circe.optics.JsonPath.root
 import io.circe.parser
 import io.circe.syntax.EncoderOps
+import io.jobial.sprint.logging.Logging
+import io.jobial.sprint.util.CatsUtils
+import org.joda.time.DateTime
+import org.joda.time.Duration
+import org.joda.time.format.PeriodFormatterBuilder
 import sttp.client3.UriContext
 import sttp.client3.asString
 import sttp.client3.asynchttpclient.cats.AsyncHttpClientCatsBackend
 import sttp.client3.basicRequest
 import sttp.model.Uri
-import io.jobial.sprint.logging.Logging
-import io.jobial.sprint.util.CatsUtils
-import org.joda.time.DateTime
-import org.joda.time.DateTime
-import org.joda.time.Duration
-import org.joda.time.format.PeriodFormatterBuilder
-import sttp.client3.UriContext
 
 import java.time.Instant
 import java.time.Instant.now
-import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import scala.concurrent.duration.DurationInt
+import scala.concurrent.duration.FiniteDuration
 
 trait BitbucketClient[F[_]] extends Logging[F] with CatsUtils[F] {
 
@@ -68,12 +65,12 @@ trait BitbucketClient[F[_]] extends Logging[F] with CatsUtils[F] {
       r <- getPathFromBitbucketList(uri"${context.baseUrl}/${context.workspace}/$repository/pipelines?page=1&sort=-created_on", root.json)
     } yield r
 
-  def triggerPipelines(targets: List[(String, String)], variables: List[(String, String)] = List())(implicit context: BitbucketContext, concurrent: Concurrent[F], parallel: Parallel[F], contextShift: ContextShift[F], timer: Timer[F]) =
+  def triggerPipelines(targets: List[(String, String)], variables: List[(String, String)] = List(), delay: FiniteDuration = 1.second)(implicit context: BitbucketContext, concurrent: Concurrent[F], parallel: Parallel[F], contextShift: ContextShift[F], timer: Timer[F]) =
     for {
       _ <- whenA(targets.isEmpty)(info("No pipelines to trigger"))
       r <- targets.map { case (repo, branch) =>
         info(s"Triggering pipeline $repo:$branch") >>
-          triggerPipeline(repo, branch, variables) >> sleep(3.seconds)
+          triggerPipeline(repo, branch, variables) >> sleep(delay)
       }.sequence
     } yield r
 
