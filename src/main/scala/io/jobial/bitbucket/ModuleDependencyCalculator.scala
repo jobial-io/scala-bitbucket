@@ -18,7 +18,7 @@ trait ModuleDependencyCalculator extends ProcessManagement[IO] {
   def updateRepoMirror(repo: String) =
     runProcessAndWait(List("git", "clone", "--mirror", bitbucketRepositoryUri(repo)), 10.minutes, reposDir).handleErrorWith(_ =>
       runProcessAndWait(List("git", "fetch", "--all"), 10.minutes, s"$reposDir/$repo.git")
-    )
+    ) >> runProcessAndWait(List("git", "remote", "prune", "origin"), 10.minutes, s"$reposDir/$repo.git")
 
   def getRepoBranches(repo: String) = {
     implicit val processContext = ProcessContext(keepOutput = true)
