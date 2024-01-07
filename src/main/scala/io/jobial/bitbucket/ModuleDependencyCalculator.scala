@@ -83,6 +83,17 @@ trait ModuleDependencyCalculator extends ProcessManagement[IO] {
       } yield files
     }.parSequence.map(_.flatten)
 
+  def fixDependencyBranches(dependencies: ModuleDependencies) =
+    dependencies.map { case (module, moduleDependencies) =>
+      module -> moduleDependencies.map { dependency =>
+        val dependencyWithBranch = dependency.copy(branch = module.branch)
+        if (dependencies.isDefinedAt(dependencyWithBranch))
+          dependencyWithBranch
+        else
+          dependency
+      }
+    }
+
   def filterOutExternalDependencies(dependencies: ModuleDependencies) =
     dependencies.mapValues(_.filter(dependencies.isDefinedAt)).toMap
 
@@ -97,7 +108,7 @@ trait ModuleDependencyCalculator extends ProcessManagement[IO] {
             }.getOrElse(Set())
           }.toSet
       }.toMap
-    } yield filterOutExternalDependencies(dependencies)
+    } yield filterOutExternalDependencies(fixDependencyBranches(dependencies))
 
   def getMavenDependencies(repos: List[String]) =
     parseFilesFromAllBranches(repos, parsePom, ".*pom.xml$")
@@ -133,11 +144,17 @@ trait ModuleDependencyCalculator extends ProcessManagement[IO] {
       mavenDependencies <- getMavenDependencies(repos)
       pipelineDependencies <- getBitbucketPipelineDependencies(repos)
       dockerDependencies <- getDockerDependencies(repos)
-      allDependencies = Seq(mavenDependencies, pipelineDependencies, dockerDependencies).map(_.toSeq).reduce(_ ++ _)
-    } yield allDependencies.groupBy(_._1).mapValues { v =>
+      allDependencies = mergeDependencies(mavenDependencies, pipelineDependencies, dockerDependencies)
+    } yield allDependencies
+
+  def mergeDependencies(dependencies: ModuleDependencies*) = {
+    val allDependencies = dependencies.map(_.toList).reduce(_ ++ _)
+
+    allDependencies.groupBy(_._1).mapValues { v =>
       val s = v.toSet
       s.flatMap(a => a._2)
     }.toMap
+  }
 
   def dependents(pipeline: DependencyModule, dependencies: ModuleDependencies) =
     dependencies.keySet.filter(dependencies(_).contains(pipeline))
@@ -156,16 +173,16 @@ trait ModuleDependencyCalculator extends ProcessManagement[IO] {
 
   def dependenciesClosure(dependencies: ModuleDependencies) =
     dependencies.map { case (k, _) => k -> setBranchForAncestors(k, ancestors(k, dependencies), dependencies) }
-    
+
   def dependentRoots(module: DependencyModule, dependencies: ModuleDependencies) = {
     val closure = dependenciesClosure(dependencies)
 
     roots(dependents(module, closure), closure)
   }
-  
+
   def dependenciesInBetween(ancestor: DependencyModule, descendent: DependencyModule, dependencies: ModuleDependencies) = {
     val closure = dependenciesClosure(dependencies)
-    
+
     val ancestorDependents = setBranchForAncestors(descendent, dependents(ancestor, closure), closure)
     val descendentAncestors = ancestors(descendent, closure)
 
@@ -183,9 +200,9 @@ trait ModuleDependencyCalculator extends ProcessManagement[IO] {
   type ModuleDependencies = Map[DependencyModule, Set[DependencyModule]]
 
   val emptyDependencies: ModuleDependencies = Map()
-  
+
   def mavenGroupId: String
-  
+
   val mainBranchName = "master"
 }
 
