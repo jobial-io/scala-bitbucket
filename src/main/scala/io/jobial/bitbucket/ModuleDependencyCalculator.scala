@@ -174,6 +174,9 @@ trait ModuleDependencyCalculator extends ProcessManagement[IO] {
   def dependenciesClosure(dependencies: ModuleDependencies) =
     dependencies.map { case (k, _) => k -> setBranchForAncestors(k, ancestors(k, dependencies), dependencies) }
 
+  def dependentsClosure(module: DependencyModule, dependencies: ModuleDependencies) =
+    dependents(module, dependenciesClosure(dependencies))
+    
   def dependentRoots(module: DependencyModule, dependencies: ModuleDependencies) = {
     val closure = dependenciesClosure(dependencies)
 
