@@ -68,13 +68,17 @@ trait BitbucketClient[F[_]] extends Logging[F] with CatsUtils[F] {
   def triggerPipelines(targets: List[(String, String)], variables: List[(String, String)] = List(), delay: FiniteDuration = 1.second)(implicit context: BitbucketContext, concurrent: Concurrent[F], parallel: Parallel[F], contextShift: ContextShift[F], timer: Timer[F]) =
     for {
       _ <- whenA(targets.isEmpty)(info("No pipelines to trigger"))
-      r <- targets.map { case (repo, branch) =>
-        info(s"Triggering pipeline $repo:$branch") >>
-          triggerPipeline(repo, branch, variables) >> sleep(delay)
+      results <- targets.map { case (repo, branch) =>
+        info(s"Triggering pipeline $repo:$branch") >> {
+          for {
+            r <- triggerPipeline(repo, branch, variables)
+            _ <- sleep(delay)
+          } yield r
+        }
       }.sequence
-    } yield r
+    } yield results
 
-  def triggerPipeline(repository: String, branch: String, variables: List[(String, String)] = List())(implicit context: BitbucketContext, concurrent: Concurrent[F], contextShift: ContextShift[F]): F[_] =
+  def triggerPipeline(repository: String, branch: String, variables: List[(String, String)] = List())(implicit context: BitbucketContext, concurrent: Concurrent[F], contextShift: ContextShift[F]): F[TriggerPipelineResult] =
     AsyncHttpClientCatsBackend.resource[F]().use { backend =>
       val request = basicRequest
         .post(uri"${context.baseUrl}/${context.workspace}/$repository/pipelines/")
@@ -99,7 +103,10 @@ trait BitbucketClient[F[_]] extends Logging[F] with CatsUtils[F] {
         .auth.basic(context.user, context.password)
         .response(asString.mapLeft(new IllegalStateException(_)))
 
-      backend.send(request)
+      for {
+        response <- backend.send(request)
+        json <- fromEither(response.body.flatMap(parser.parse))
+      } yield TriggerPipelineResult(json)
     }
 
   def getPathFromBitbucketList[T](uri: Uri, path: monocle.Optional[Json, T])(implicit context: BitbucketContext, concurrent: Concurrent[F], contextShift: ContextShift[F]) =
@@ -240,4 +247,9 @@ case class BitbucketRepoInfo(
     .filterNot(_ === 0)
     .orElse(lastPipelineCreatedOn.map(c => (DateTime.now.getMillis - c.toEpochMilli).toInt / 1000)).map(d => new Duration(d * 1000).toPeriod())
     .map(periodFormatter.print(_)).getOrElse("")
+}
+
+case class TriggerPipelineResult(result: Json) {
+  
+  def buildNumber = root.build_number.int.getOption(result)
 }
