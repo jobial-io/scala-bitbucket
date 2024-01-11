@@ -37,8 +37,8 @@ trait BitbucketClient[F[_]] extends Logging[F] with CatsUtils[F] {
 
   def getProjectRepoInfos(implicit context: BitbucketContext, concurrent: Concurrent[F], parallel: Parallel[F], contextShift: ContextShift[F]) =
     for {
-      repos <- getProjectRepos.map(_.map(BitbucketRepoInfo(_)))
-      repos <- repos.map(r => getLastPipelines(r.name).map(p => r.copy(lastPipelines = p))).parSequence
+      repos <- getProjectRepos.map(_.map(BitbucketRepoPipelines(_)))
+      repos <- repos.map(r => getLatestPipelines(r.name).map(p => r.copy(latestPipelines = p))).parSequence
     } yield repos
 
   def getPipelinesLastTime(repository: String)(implicit context: BitbucketContext, concurrent: Concurrent[F], contextShift: ContextShift[F]) =
@@ -60,10 +60,10 @@ trait BitbucketClient[F[_]] extends Logging[F] with CatsUtils[F] {
       r <- getPathFromBitbucketList(uri"${context.baseUrl}/${context.workspace}/$repository/pipelines?page=1&sort=-created_on", root.state.name.string)
     } yield r
 
-  def getLastPipelines(repository: String)(implicit context: BitbucketContext, concurrent: Concurrent[F], contextShift: ContextShift[F]) =
+  def getLatestPipelines(repository: String)(implicit context: BitbucketContext, concurrent: Concurrent[F], contextShift: ContextShift[F]) =
     for {
       r <- getPathFromBitbucketList(uri"${context.baseUrl}/${context.workspace}/$repository/pipelines?page=1&sort=-created_on", root.json)
-    } yield r
+    } yield r.map(BitbucketPipeline(_))
 
   def triggerPipelines(targets: List[(String, String)], variables: List[(String, String)] = List(), delay: FiniteDuration = 1.second)(implicit context: BitbucketContext, concurrent: Concurrent[F], parallel: Parallel[F], contextShift: ContextShift[F], timer: Timer[F]) =
     for {
@@ -195,33 +195,37 @@ case class BitbucketRunnerState(
   updated_on: String
 )
 
-
-case class BitbucketRepoInfo(
+case class BitbucketRepoPipelines(
   name: String,
-  lastPipelines: List[Json] = List()
+  latestPipelines: List[BitbucketPipeline] = List()
 ) {
 
-  def lastPipeline = lastPipelines.headOption
+  def latestPipeline = latestPipelines.headOption
+}
 
-  def lastPipelineState = lastPipeline.flatMap(root.state.name.string.getOption(_))
+case class BitbucketPipeline(
+  pipeline: Json
+) {
+  
+  def state = root.state.name.string.getOption(pipeline)
 
-  def lastPipelineRefName = lastPipeline.flatMap(root.target.ref_name.string.getOption(_))
+  def refName = root.target.ref_name.string.getOption(pipeline)
 
-  def lastPipelineResult = lastPipeline.flatMap(root.state.result.name.string.getOption(_))
+  def result = root.state.result.name.string.getOption(pipeline)
 
-  def lastPipelineCompletedTime = lastPipeline.flatMap(root.completed_on.string.getOption(_).map(Instant.parse))
+  def completedTime = root.completed_on.string.getOption(pipeline).map(Instant.parse)
 
-  def lastPipelineDuration = lastPipeline.flatMap(root.duration_in_seconds.int.getOption(_))
+  def duration = root.duration_in_seconds.int.getOption(pipeline)
 
-  def lastPipelineBuildNumber = lastPipeline.flatMap(root.build_number.int.getOption(_))
+  def buildNumber = root.build_number.int.getOption(pipeline)
 
-  def lastPipelineCreatedOn = lastPipeline.flatMap(root.created_on.string.getOption(_).map(Instant.parse))
+  def createdOn = root.created_on.string.getOption(pipeline).map(Instant.parse)
 
-  def lastPipelineNotRun = (lastPipelineDuration === Some(0) && lastPipelineState === Some("COMPLETED")) || lastPipelineResult === Some("ERROR")
+  def notRun = (duration === Some(0) && state === Some("COMPLETED")) || result === Some("ERROR")
 
-  def prettyState = lastPipelineState match {
+  def prettyState = state match {
     case Some("COMPLETED") =>
-      lastPipelineResult match {
+      result match {
         case Some(r) =>
           r.toLowerCase.capitalize
         case None =>
@@ -237,15 +241,15 @@ case class BitbucketRepoInfo(
 
   val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault)
 
-  def prettyTimestamp = lastPipeline.map(_ => formatter.format(lastPipelineCompletedTime.getOrElse(Instant.now)))
+  def prettyTimestamp = formatter.format(completedTime.getOrElse(Instant.now))
 
   val periodFormatter = new PeriodFormatterBuilder()
     .appendMinutes().appendSuffix("m").appendSeconds().appendSuffix("s")
     .toFormatter
 
-  def prettyDuration = lastPipelineDuration
+  def prettyDuration = duration
     .filterNot(_ === 0)
-    .orElse(lastPipelineCreatedOn.map(c => (DateTime.now.getMillis - c.toEpochMilli).toInt / 1000)).map(d => new Duration(d * 1000).toPeriod())
+    .orElse(createdOn.map(c => (DateTime.now.getMillis - c.toEpochMilli).toInt / 1000)).map(d => new Duration(d * 1000).toPeriod())
     .map(periodFormatter.print(_)).getOrElse("")
 }
 
