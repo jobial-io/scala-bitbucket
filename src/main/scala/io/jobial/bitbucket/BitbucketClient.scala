@@ -63,7 +63,7 @@ trait BitbucketClient[F[_]] extends Logging[F] with CatsUtils[F] {
   def getLatestPipelines(repository: String)(implicit context: BitbucketContext, concurrent: Concurrent[F], contextShift: ContextShift[F]) =
     for {
       r <- getPathFromBitbucketList(uri"${context.baseUrl}/${context.workspace}/$repository/pipelines?page=1&sort=-created_on", root.json)
-    } yield r.map(BitbucketPipeline(_))
+    } yield r.map(BitbucketPipeline(_)).sortBy(_.buildNumber).reverse
 
   def triggerPipelines(targets: List[(String, String)], variables: List[(String, String)] = List(), delay: FiniteDuration = 1.second)(implicit context: BitbucketContext, concurrent: Concurrent[F], parallel: Parallel[F], contextShift: ContextShift[F], timer: Timer[F]) =
     for {
@@ -188,12 +188,16 @@ case class BitbucketRunner(
   state: BitbucketRunnerState,
   created_on: String,
   updated_on: String
-)
+) {
+  def isOnline = state.isOnline
+}
 
 case class BitbucketRunnerState(
   status: String,
   updated_on: String
-)
+) {
+  def isOnline = status === "ONLINE"
+}
 
 case class BitbucketRepoPipelines(
   name: String,
