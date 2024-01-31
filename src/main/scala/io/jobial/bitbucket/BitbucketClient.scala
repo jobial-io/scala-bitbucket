@@ -80,7 +80,7 @@ trait BitbucketClient[F[_]] extends Logging[F] with CatsUtils[F] {
     } yield results
 
   def triggerPipeline(repository: String, branch: String, variables: List[(String, String)] = List())(implicit context: BitbucketContext[F], concurrent: Concurrent[F], contextShift: ContextShift[F]): F[TriggerPipelineResult] =
-    context.rateLimiter.execute {
+    context.rateLimiter {
       AsyncHttpClientCatsBackend.resource[F]().use { backend =>
         val request = basicRequest
           .post(uri"${context.baseUrl}/${context.workspace}/$repository/pipelines/")
@@ -118,7 +118,7 @@ trait BitbucketClient[F[_]] extends Logging[F] with CatsUtils[F] {
     } yield pages.flatMap(path.getOption)
 
   def getBitbucketList(uri: Uri)(implicit context: BitbucketContext[F], concurrent: Concurrent[F], contextShift: ContextShift[F]): F[List[Json]] =
-    context.rateLimiter.execute {
+    context.rateLimiter {
       AsyncHttpClientCatsBackend.resource[F]().use { backend =>
         val request = basicRequest
           .get(uri)
@@ -136,7 +136,7 @@ trait BitbucketClient[F[_]] extends Logging[F] with CatsUtils[F] {
     }
 
   def getBitbucketPage(uri: Uri)(implicit context: BitbucketContext[F], concurrent: Concurrent[F], contextShift: ContextShift[F]): F[List[Json]] =
-    context.rateLimiter.execute {
+    context.rateLimiter {
       AsyncHttpClientCatsBackend.resource[F]().use { backend =>
         val request = basicRequest
           .get(uri)
