@@ -14,6 +14,7 @@ import io.circe.parser
 import io.circe.syntax.EncoderOps
 import io.jobial.sprint.logging.Logging
 import io.jobial.sprint.util.CatsUtils
+import io.jobial.sprint.util.RateLimiter
 import org.joda.time.DateTime
 import org.joda.time.Duration
 import org.joda.time.format.PeriodFormatterBuilder
@@ -32,16 +33,16 @@ import scala.concurrent.duration.FiniteDuration
 
 trait BitbucketClient[F[_]] extends Logging[F] with CatsUtils[F] {
 
-  def getProjectRepos(implicit context: BitbucketContext, concurrent: Concurrent[F], contextShift: ContextShift[F]) =
+  def getProjectRepos(implicit context: BitbucketContext[F], concurrent: Concurrent[F], contextShift: ContextShift[F]) =
     getPathFromBitbucketList(uri"""${context.baseUrl}/${context.workspace}?q=project.key="${context.project}"""", root.name.string)
 
-  def getProjectRepoInfos(implicit context: BitbucketContext, concurrent: Concurrent[F], parallel: Parallel[F], contextShift: ContextShift[F]) =
+  def getProjectRepoPipelines(implicit context: BitbucketContext[F], concurrent: Concurrent[F], parallel: Parallel[F], contextShift: ContextShift[F]) =
     for {
       repos <- getProjectRepos.map(_.map(BitbucketRepoPipelines(_)))
       repos <- repos.map(r => getLatestPipelines(r.name).map(p => r.copy(latestPipelines = p))).parSequence
     } yield repos
 
-  def getPipelinesLastTime(repository: String)(implicit context: BitbucketContext, concurrent: Concurrent[F], contextShift: ContextShift[F]) =
+  def getPipelinesLastTime(repository: String)(implicit context: BitbucketContext[F], concurrent: Concurrent[F], contextShift: ContextShift[F]) =
     for {
       r <- getBitbucketPage(uri"${context.baseUrl}/${context.workspace}/$repository/pipelines?page=1&sort=-created_on")
     } yield {
@@ -55,17 +56,17 @@ trait BitbucketClient[F[_]] extends Logging[F] with CatsUtils[F] {
           completedOn.getOrElse(now)
     }.sortBy(_.toEpochMilli).reverse.headOption
 
-  def getPipelinesState(repository: String)(implicit context: BitbucketContext, concurrent: Concurrent[F], contextShift: ContextShift[F]) =
+  def getPipelinesState(repository: String)(implicit context: BitbucketContext[F], concurrent: Concurrent[F], contextShift: ContextShift[F]) =
     for {
       r <- getPathFromBitbucketList(uri"${context.baseUrl}/${context.workspace}/$repository/pipelines?page=1&sort=-created_on", root.state.name.string)
     } yield r
 
-  def getLatestPipelines(repository: String)(implicit context: BitbucketContext, concurrent: Concurrent[F], contextShift: ContextShift[F]) =
+  def getLatestPipelines(repository: String)(implicit context: BitbucketContext[F], concurrent: Concurrent[F], contextShift: ContextShift[F]) =
     for {
       r <- getPathFromBitbucketList(uri"${context.baseUrl}/${context.workspace}/$repository/pipelines?page=1&sort=-created_on", root.json)
     } yield r.map(BitbucketPipeline(_)).sortBy(_.buildNumber).reverse
 
-  def triggerPipelines(targets: List[(String, String)], variables: List[(String, String)] = List(), delay: FiniteDuration = 1.second)(implicit context: BitbucketContext, concurrent: Concurrent[F], parallel: Parallel[F], contextShift: ContextShift[F], timer: Timer[F]) =
+  def triggerPipelines(targets: List[(String, String)], variables: List[(String, String)] = List(), delay: FiniteDuration = 1.second)(implicit context: BitbucketContext[F], concurrent: Concurrent[F], parallel: Parallel[F], contextShift: ContextShift[F], timer: Timer[F]) =
     for {
       _ <- whenA(targets.isEmpty)(info("No pipelines to trigger"))
       results <- targets.map { case (repo, branch) =>
@@ -78,73 +79,79 @@ trait BitbucketClient[F[_]] extends Logging[F] with CatsUtils[F] {
       }.sequence
     } yield results
 
-  def triggerPipeline(repository: String, branch: String, variables: List[(String, String)] = List())(implicit context: BitbucketContext, concurrent: Concurrent[F], contextShift: ContextShift[F]): F[TriggerPipelineResult] =
-    AsyncHttpClientCatsBackend.resource[F]().use { backend =>
-      val request = basicRequest
-        .post(uri"${context.baseUrl}/${context.workspace}/$repository/pipelines/")
-        .contentType("application/json")
-        .body(
-          obj(
-            "target" -> obj(
-              "ref_type" -> "branch".asJson,
-              "type" -> "pipeline_ref_target".asJson,
-              "ref_name" -> branch.asJson
-            ),
-            "variables" -> arr(
-              variables.map { case (key, value) =>
-                obj(
-                  "key" -> key.asJson,
-                  "value" -> value.asJson
-                )
-              }: _*
-            )
-          ).noSpaces
-        )
-        .auth.basic(context.user, context.password)
-        .response(asString.mapLeft(new IllegalStateException(_)))
+  def triggerPipeline(repository: String, branch: String, variables: List[(String, String)] = List())(implicit context: BitbucketContext[F], concurrent: Concurrent[F], contextShift: ContextShift[F]): F[TriggerPipelineResult] =
+    context.rateLimiter.execute {
+      AsyncHttpClientCatsBackend.resource[F]().use { backend =>
+        val request = basicRequest
+          .post(uri"${context.baseUrl}/${context.workspace}/$repository/pipelines/")
+          .contentType("application/json")
+          .body(
+            obj(
+              "target" -> obj(
+                "ref_type" -> "branch".asJson,
+                "type" -> "pipeline_ref_target".asJson,
+                "ref_name" -> branch.asJson
+              ),
+              "variables" -> arr(
+                variables.map { case (key, value) =>
+                  obj(
+                    "key" -> key.asJson,
+                    "value" -> value.asJson
+                  )
+                }: _*
+              )
+            ).noSpaces
+          )
+          .auth.basic(context.user, context.password)
+          .response(asString.mapLeft(new IllegalStateException(_)))
 
-      for {
-        response <- backend.send(request)
-        json <- fromEither(response.body.flatMap(parser.parse))
-      } yield TriggerPipelineResult(json)
+        for {
+          response <- backend.send(request)
+          json <- fromEither(response.body.flatMap(parser.parse))
+        } yield TriggerPipelineResult(json)
+      }
     }
 
-  def getPathFromBitbucketList[T](uri: Uri, path: monocle.Optional[Json, T])(implicit context: BitbucketContext, concurrent: Concurrent[F], contextShift: ContextShift[F]) =
+  def getPathFromBitbucketList[T](uri: Uri, path: monocle.Optional[Json, T])(implicit context: BitbucketContext[F], concurrent: Concurrent[F], contextShift: ContextShift[F]) =
     for {
       pages <- getBitbucketList(uri)
     } yield pages.flatMap(path.getOption)
 
-  def getBitbucketList(uri: Uri)(implicit context: BitbucketContext, concurrent: Concurrent[F], contextShift: ContextShift[F]): F[List[Json]] =
-    AsyncHttpClientCatsBackend.resource[F]().use { backend =>
-      val request = basicRequest
-        .get(uri)
-        .auth.basic(context.user, context.password)
-        .response(asString.mapLeft(new IllegalStateException(_)))
+  def getBitbucketList(uri: Uri)(implicit context: BitbucketContext[F], concurrent: Concurrent[F], contextShift: ContextShift[F]): F[List[Json]] =
+    context.rateLimiter.execute {
+      AsyncHttpClientCatsBackend.resource[F]().use { backend =>
+        val request = basicRequest
+          .get(uri)
+          .auth.basic(context.user, context.password)
+          .response(asString.mapLeft(new IllegalStateException(_)))
 
-      for {
-        response <- backend.send(request)
-        body <- fromEither(response.body)
-        json <- fromEither(parser.parse(body))
-        next = root.next.string.getOption(json)
-        nextList <- next.flatMap(Uri.parse(_).toOption).map(getBitbucketList).getOrElse(pure(List()))
-      } yield root.values.each.json.getAll(json) ++ nextList
+        for {
+          response <- backend.send(request)
+          body <- fromEither(response.body)
+          json <- fromEither(parser.parse(body))
+          next = root.next.string.getOption(json)
+          nextList <- next.flatMap(Uri.parse(_).toOption).map(getBitbucketList).getOrElse(pure(List()))
+        } yield root.values.each.json.getAll(json) ++ nextList
+      }
     }
 
-  def getBitbucketPage(uri: Uri)(implicit context: BitbucketContext, concurrent: Concurrent[F], contextShift: ContextShift[F]): F[List[Json]] =
-    AsyncHttpClientCatsBackend.resource[F]().use { backend =>
-      val request = basicRequest
-        .get(uri)
-        .auth.basic(context.user, context.password)
-        .response(asString.mapLeft(new IllegalStateException(_)))
+  def getBitbucketPage(uri: Uri)(implicit context: BitbucketContext[F], concurrent: Concurrent[F], contextShift: ContextShift[F]): F[List[Json]] =
+    context.rateLimiter.execute {
+      AsyncHttpClientCatsBackend.resource[F]().use { backend =>
+        val request = basicRequest
+          .get(uri)
+          .auth.basic(context.user, context.password)
+          .response(asString.mapLeft(new IllegalStateException(_)))
 
-      for {
-        response <- backend.send(request)
-        body <- fromEither(response.body)
-        json <- fromEither(parser.parse(body))
-      } yield root.values.each.json.getAll(json)
+        for {
+          response <- backend.send(request)
+          body <- fromEither(response.body)
+          json <- fromEither(parser.parse(body))
+        } yield root.values.each.json.getAll(json)
+      }
     }
 
-  def getRunners(implicit context: BitbucketContext, concurrent: Concurrent[F], parallel: Parallel[F], contextShift: ContextShift[F]) = for {
+  def getRunners(implicit context: BitbucketContext[F], concurrent: Concurrent[F], parallel: Parallel[F], contextShift: ContextShift[F]) = for {
     runners <- getBitbucketList(uri"${context.internalBaseUrl}/workspaces/${context.workspaceUUID}/pipelines-config/runners")
     r <- runners.map(r => fromEither(r.as[BitbucketRunner])).parSequence
   } yield r
@@ -154,7 +161,7 @@ trait BitbucketClient[F[_]] extends Logging[F] with CatsUtils[F] {
     oauthClientId: String,
     oauthClientSecret: String,
     workingDirectory: String = "/tmp"
-  )(implicit context: BitbucketContext) =
+  )(implicit context: BitbucketContext[F]) =
     s"""-v /tmp:/tmp -v /var/run/docker.sock:/var/run/docker.sock \\
 -v /var/lib/docker/containers:/var/lib/docker/containers:ro -e ACCOUNT_UUID=${context.workspaceUUID} -e RUNNER_UUID={$runnerUUID} \\
 -e RUNTIME_PREREQUISITES_ENABLED=true -e OAUTH_CLIENT_ID=$oauthClientId \\
@@ -164,15 +171,16 @@ trait BitbucketClient[F[_]] extends Logging[F] with CatsUtils[F] {
 
   def updateDockerCpuQuotas =
     """for i in \$(docker ps --format '{{.ID}}') ; do sudo docker update --cpu-quota -1 \$i; done
-"""
+  """
 }
 
-case class BitbucketContext(
+case class BitbucketContext[F[_]](
   user: String,
   password: String,
   project: String,
   workspace: String,
   workspaceUUID: String,
+  rateLimiter: RateLimiter[F],
   baseUrl: String = "https://api.bitbucket.org/2.0/repositories",
   internalBaseUrl: String = "https://api.bitbucket.org/internal"
 ) {
@@ -210,7 +218,7 @@ case class BitbucketRepoPipelines(
 case class BitbucketPipeline(
   pipeline: Json
 ) {
-  
+
   def state = root.state.name.string.getOption(pipeline)
 
   def refName = root.target.ref_name.string.getOption(pipeline)
@@ -258,6 +266,6 @@ case class BitbucketPipeline(
 }
 
 case class TriggerPipelineResult(result: Json) {
-  
+
   def buildNumber = root.build_number.int.getOption(result)
 }
