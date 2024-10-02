@@ -36,10 +36,10 @@ trait BitbucketClient[F[_]] extends Logging[F] with CatsUtils[F] {
   def getProjectRepos(implicit context: BitbucketContext[F], concurrent: Concurrent[F], contextShift: ContextShift[F]) =
     getPathFromBitbucketList(uri"""${context.baseUrl}/${context.workspace}?q=project.key="${context.project}"""", root.name.string)
 
-  def getProjectRepoPipelines(implicit context: BitbucketContext[F], concurrent: Concurrent[F], parallel: Parallel[F], contextShift: ContextShift[F]) =
+  def getProjectRepoPipelines(maxPipelinePages: Option[Int] = Some(1))(implicit context: BitbucketContext[F], concurrent: Concurrent[F], parallel: Parallel[F], contextShift: ContextShift[F]) =
     for {
       repos <- getProjectRepos.map(_.map(BitbucketRepoPipelines(_)))
-      repos <- repos.map(r => getLatestPipelines(r.name).map(p => r.copy(latestPipelines = p))).parSequence
+      repos <- repos.map(r => getLatestPipelines(r.name, maxPipelinePages).map(p => r.copy(latestPipelines = p))).parSequence
     } yield repos
 
   def getPipelinesLastTime(repository: String)(implicit context: BitbucketContext[F], concurrent: Concurrent[F], contextShift: ContextShift[F]) =
@@ -58,12 +58,12 @@ trait BitbucketClient[F[_]] extends Logging[F] with CatsUtils[F] {
 
   def getPipelinesState(repository: String)(implicit context: BitbucketContext[F], concurrent: Concurrent[F], contextShift: ContextShift[F]) =
     for {
-      r <- getPathFromBitbucketList(uri"${context.baseUrl}/${context.workspace}/$repository/pipelines?page=1&sort=-created_on", root.state.name.string)
+      r <- getPathFromBitbucketList(uri"${context.baseUrl}/${context.workspace}/$repository/pipelines?page=1&sort=-created_on", root.state.name.string, Some(1))
     } yield r
 
-  def getLatestPipelines(repository: String)(implicit context: BitbucketContext[F], concurrent: Concurrent[F], contextShift: ContextShift[F]) =
+  def getLatestPipelines(repository: String, maxPages: Option[Int] = Some(1))(implicit context: BitbucketContext[F], concurrent: Concurrent[F], contextShift: ContextShift[F]) =
     for {
-      r <- getPathFromBitbucketList(uri"${context.baseUrl}/${context.workspace}/$repository/pipelines?page=1&sort=-created_on", root.json)
+      r <- getPathFromBitbucketList(uri"${context.baseUrl}/${context.workspace}/$repository/pipelines?page=1&sort=-created_on", root.json, maxPages)
     } yield r.map(BitbucketPipeline(_)).sortBy(_.buildNumber).reverse
 
   def triggerPipelines(targets: List[(String, String)], variables: List[(String, String)] = List(), delay: FiniteDuration = 1.second)(implicit context: BitbucketContext[F], concurrent: Concurrent[F], parallel: Parallel[F], contextShift: ContextShift[F], timer: Timer[F]) =
@@ -112,27 +112,31 @@ trait BitbucketClient[F[_]] extends Logging[F] with CatsUtils[F] {
       }
     }
 
-  def getPathFromBitbucketList[T](uri: Uri, path: monocle.Optional[Json, T])(implicit context: BitbucketContext[F], concurrent: Concurrent[F], contextShift: ContextShift[F]) =
+  def getPathFromBitbucketList[T](uri: Uri, path: monocle.Optional[Json, T], maxPages: Option[Int] = None)(implicit context: BitbucketContext[F], concurrent: Concurrent[F], contextShift: ContextShift[F]) =
     for {
-      pages <- getBitbucketList(uri)
+      pages <- getBitbucketList(uri, maxPages)
     } yield pages.flatMap(path.getOption)
 
-  def getBitbucketList(uri: Uri)(implicit context: BitbucketContext[F], concurrent: Concurrent[F], contextShift: ContextShift[F]): F[List[Json]] =
+  def getBitbucketList(uri: Uri, maxPages: Option[Int] = None)(implicit context: BitbucketContext[F], concurrent: Concurrent[F], contextShift: ContextShift[F]): F[List[Json]] =
     context.rateLimiter {
-      AsyncHttpClientCatsBackend.resource[F]().use { backend =>
-        val request = basicRequest
-          .get(uri)
-          .auth.basic(context.user, context.password)
-          .response(asString.mapLeft(new IllegalStateException(_)))
+      if (maxPages.map(_ <= 0).getOrElse(false))
+        pure(List())
+      else
+        AsyncHttpClientCatsBackend.resource[F]().use { backend =>
+          val request = basicRequest
+            .get(uri)
+            .auth.basic(context.user, context.password)
+            .response(asString.mapLeft(new IllegalStateException(_)))
 
-        for {
-          response <- backend.send(request)
-          body <- fromEither(response.body)
-          json <- fromEither(parser.parse(body))
-          next = root.next.string.getOption(json)
-          nextList <- next.flatMap(Uri.parse(_).toOption).map(getBitbucketList).getOrElse(pure(List()))
-        } yield root.values.each.json.getAll(json) ++ nextList
-      }
+          for {
+            _ <- debug(s"Fetching list $uri")
+            response <- backend.send(request)
+            body <- fromEither(response.body)
+            json <- fromEither(parser.parse(body))
+            next = root.next.string.getOption(json)
+            nextList <- next.flatMap(Uri.parse(_).toOption).map(uri => getBitbucketList(uri, maxPages.map(_ - 1))).getOrElse(pure(List()))
+          } yield root.values.each.json.getAll(json) ++ nextList
+        }
     }
 
   def getBitbucketPage(uri: Uri)(implicit context: BitbucketContext[F], concurrent: Concurrent[F], contextShift: ContextShift[F]): F[List[Json]] =
